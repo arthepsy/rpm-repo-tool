@@ -170,14 +170,12 @@ _cmd_run() {
 		else:
 		    _cmd=os.path.join("yum-utils-${_yuver}", "${_cmd}.py")
 		sys.argv[0] = _cmd
-		#print("run:", _cmd, sys.argv)
 		if not os.path.isfile(_cmd):
 		    print("err: command ${_cmd} not found.")
 		    sys.exit(1)
 		import rpm, urlgrabber
 		rpm.addMacro('_dbpath', '${_rpmdb}')
 		urlgrabber.grabber.URLGrabberOptions.user_agent = 'urlgrabber/3.10.2'
-		#default_grabber.user_agent('xxx')
 		execfile(_cmd)
 		rpm.delMacro('_dbpath')
 	EOF
@@ -234,7 +232,6 @@ _cmd_sync() {
 		_args="-v --pretty --workers 2"
 		[ -f comps.xml ] && _args="${_args} -g comps.xml"
 		pwd | grep -q ' ' || _args="${_args} --update"
-		echo createrepo "${_args} ."
 		eval "set -- $_args ."
 		createrepo "$@"
 		if [ -f *-updateinfo.xml.gz ]; then
