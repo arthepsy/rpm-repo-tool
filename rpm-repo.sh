@@ -18,7 +18,7 @@ _usage() {
 
 _main() {
 	case "$1" in
-		list) shift; _cmd_run yum repolist "$@" ;;
+		list) shift; _cmd_run yum -C repolist all ;;
 		run) shift; _cmd_run "$@" ;;
 		sync) shift; _cmd_sync "$@" ;;
 		gpg-*) _cmd_gpg "$@" ;;
