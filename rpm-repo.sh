@@ -196,10 +196,12 @@ _cmd_sync() {
 	
 	(set -f; IFS='
 	'
+	_repo="$1"
 	_destdirs=""
 	for _repo_names_line in $(_get_repo_names); do
 		_repof=""; _repon=""
 		_split "${_repo_names_line}" '|' _repof _repon
+		[ -n "${_repo}" ] && [ X"${_repo}" != X"${_repon}" ] && continue
 		_enabled=$(_read_rv "${_repof}" "${_repon}" "enabled")
 		[ X"${_enabled}" != X"1" ] && continue
 		echo "[info] synchronizing remote repository: ${_repon}"
