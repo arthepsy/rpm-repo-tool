@@ -1,1 +1,5 @@
 *~
+yum-utils-*.tar.gz
+yum-utils-*/
+example/rpmdb/
+example/yum.cache/
