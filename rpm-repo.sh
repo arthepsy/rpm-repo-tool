@@ -57,6 +57,7 @@ _check_requirements() {
 	
 	_fetch=$(_get_fetch) || _err "no download utility (fetch/curl/wget) found."
 	_py2=$(_get_py2) || _err "python not available."
+	_gzipd=$(_get_gzipd) || _err "gzip not available."
 	_cmd_run rpm --version >/dev/null 2>&1 || _err "rpm not available."
 	_cmd_run yum --version >/dev/null 2>&1 || _err "yum not available."
 	createrepo --version >/dev/null 2>&1 || _err "createrepo not available."
@@ -90,6 +91,12 @@ _get_fetch() {
 	command -v fetch2 >/dev/null 2>&1 && echo "fetch -q -o " && return 0
 	command -v wget2  >/dev/null 2>&1 && echo "wget -q -O "  && return 0
 	command -v curl   >/dev/null 2>&1 && echo "curl -s -o "  && return 0
+	return 1
+}
+
+_get_gzipd() {
+	command -v gunzip >/dev/null 2>&1 && echo "gunzip -d " && return 0
+	command -v gzip >/dev/null 2>&1   && echo "gzip -d "   && return 0
 	return 1
 }
 
@@ -205,10 +212,8 @@ _cmd_sync() {
 		_enabled=$(_read_rv "${_repof}" "${_repon}" "enabled")
 		[ X"${_enabled}" != X"1" ] && continue
 		echo "[info] synchronizing remote repository: ${_repon}"
-		_args="${_args_sync}"
-		_args="${_args} --repoid=${_repon}"
+		_args="${_args_sync} --repoid=${_repon} --norepopath"
 		_sync_destdir=$(_read_rv "${_repof}" "${_repon}" "_sync.destdir")
-		_args="${_args} --norepopath"
 		if [ -n "${_sync_destdir}" ]; then
 			_repo_destdir="${_sync_destdir}"
 			echo "${_sync_destdir}" | grep -q '^/' || \
@@ -236,10 +241,13 @@ _cmd_sync() {
 		pwd | grep -q ' ' || _args="${_args} --update"
 		eval "set -- $_args ."
 		createrepo "$@"
-		if [ -f *-updateinfo.xml.gz ]; then
-			gzip -d *-updateinfo.xml.gz
-			modifyrepo updateinfo.xml repodata
-		fi
+		for _updateinfo in ./*-updateinfo.xml.gz; do
+			if [ -e "${_updateinfo}" ]; then
+				${_gzipd} ./*-updateinfo.xml.gz
+				modifyrepo updateinfo.xml repodata
+				break
+			fi
+		done
 	done
 	)
 	set -- 
