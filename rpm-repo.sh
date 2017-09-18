@@ -1,7 +1,6 @@
 #!/bin/sh
 _cdir=$(cd -- "$(dirname "$0")" && pwd)
 _err() { echo "err: $1" >&2 && exit 1; }
-cd -- "${_cdir}" || exit 1
 
 _usage() {
 	printf "# rpm-repo.sh v1.0.0, moo@arthepsy.eu\n\n"                       >&2
@@ -17,6 +16,7 @@ _usage() {
 }
 
 _main() {
+	[ X"$1" = X"-c" ] && shift 2;
 	case "$1" in
 		list) shift; _cmd_run yum -C repolist all ;;
 		run) shift; _cmd_run "$@" ;;
@@ -37,7 +37,7 @@ _read_rv() {
 }
 
 _read_conf() {
-	_conf=${RPM_REPO_CONF:-rpm-repo.conf}
+	_conf=${RPM_REPO_CONF:-"${_cdir}/rpm-repo.conf"}
 	if [ X"$1" = X"-c" ]; then
 		shift; _conf="$1"; shift
 	fi
@@ -55,11 +55,13 @@ _check_requirements() {
 	[ ! -d "${_rpmdb}" ] && mkdir -p -- "${_rpmdb}" >/dev/null 2>&1
 	_rpmdb=$(cd -- "${_rpmdb}" && pwd) || _err "rpmdb does not exist."
 	
+	command -v sed >/dev/null 2>&1 || _err "sed not available."
+	command -v tar >/dev/null 2>&1 || _err "tar not available."
 	_fetch=$(_get_fetch) || _err "no download utility (fetch/curl/wget) found."
-	_py2=$(_get_py2) || _err "python not available."
 	_gzipd=$(_get_gzipd) || _err "gzip not available."
-	_cmd_run rpm --version >/dev/null 2>&1 || _err "rpm not available."
-	_cmd_run yum --version >/dev/null 2>&1 || _err "yum not available."
+	_py2=$(_get_py2) || _err "python not available."
+	command -v rpm >/dev/null 2>&1 || _err "rpm not available."
+	_yum=$(command -v yum 2>/dev/null) || _err "yum not available."
 	createrepo --version >/dev/null 2>&1 || _err "createrepo not available."
 	modifyrepo --version >/dev/null 2>&1 || _err "modifyrepo not available."
 	_ensure_yumutils || _err "yum-utils not available."
@@ -67,24 +69,25 @@ _check_requirements() {
 
 _ensure_yumutils() {
 	_yufn="yum-utils-${_yuver}"
-	[ -d "${_yufn}" ] && return 0
-	if [ ! -f "${_yufn}.tar.gz" ]; then
+	_yufp="${_cdir}/${_yufn}"
+	[ -d "${_yufp}" ] && return 0
+	if [ ! -f "${_yufp}.tar.gz" ]; then
 		_url="http://yum.baseurl.org/download/yum-utils/${_yufn}.tar.gz"
-		echo "[info] downloading ${_url}" >&2
-		${_fetch} "${_yufn}.tar.gz" "${_url}" || _err "download failed: ${_url}"
+		echo "[info] downloading ${_yufn}" >&2
+		${_fetch} "${_yufp}.tar.gz" "${_url}" || _err "download failed: ${_url}"
 	fi
-	if [ ! -d "${_yufn}" ]; then
+	if [ ! -d "${_yufp}" ]; then
 		echo "[info] extracting ${_yufn}" >&2
-		tar -xzf "${_yufn}.tar.gz" || _err "yum-utils extraction failed."
+		tar -C "${_cdir}" -xzf "${_yufp}.tar.gz" || _err "extraction failed."
 	fi
-	[ ! -d "${_yufn}" ] && return 1
+	[ ! -d "${_yufp}" ] && _err "does not exist: ${_yufp}"
 	echo "[info] patching ${_yufn}" >&2
-	_yum=$(command -v yum 2>/dev/null) || _err "yum not available."
 	_yumcli=$(grep "sys.path" "${_yum}" | sed -e "s#'#\"#g" | cut -d '"' -f 2)
 	[ -z "${_yumcli}" ] && _err "cannot find yum-cli path."
-	find "${_yufn}" -type f -name "*.py" -exec \
+	find "${_yufp}" -type f -name "*.py" -exec \
 		grep -q '/usr/share/yum-cli' -- "{}" \; -exec \
 		sed -i "" -e "s#/usr/share/yum-cli#${_yumcli}#g" -- "{}" \;
+	return 0
 }
 
 _get_fetch() {
@@ -175,7 +178,7 @@ _cmd_run() {
 		if os.path.isabs("${_cmd}"):
 		    _cmd="${_cmd}"
 		else:
-		    _cmd=os.path.join("yum-utils-${_yuver}", "${_cmd}.py")
+		    _cmd=os.path.join("${_cdir}", "yum-utils-${_yuver}", "${_cmd}.py")
 		sys.argv[0] = _cmd
 		if not os.path.isfile(_cmd):
 		    print("err: command ${_cmd} not found.")
@@ -226,7 +229,7 @@ _cmd_sync() {
 		_repo_newest=$(_read_rv "${_repof}" "${_repon}" "_sync.newest-only")
 		[ X"${_repo_newest}" != X"1" ] && _args="${_args} --newest-only"
 		eval "set -- $_args"
-		_cmd_run reposync "$@"
+		_cmd_run reposync "$@" || _err "failed to run reposync"
 	done
 	
 	set -f; IFS='
