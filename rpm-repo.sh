@@ -42,6 +42,9 @@ _read_conf() {
 		shift; _conf="$1"; shift
 	fi
 	[ ! -r "${_conf}" ] && _err "failed to read configuration file: ${_conf}"
+	_newline='
+	'
+	
 	_yuver=$(_read_cv "yum-utils")  || _err "yum-utils version not configured."
 	_yumconf=$(_read_cv "yum-conf") || _err "yum-conf version not configured."
 	_rpmdb=$(_read_cv "rpmdb")      || _err "rpmdb version not configured."
@@ -114,9 +117,20 @@ _strip() { sed 's/^[ '"`printf '\t'`"']*//;s/[ '"`printf '\t'`"']*$//'; }
 
 _split() {
 	_line=$1; IFS=$2; shift 2
-	read -r -- "$@" _ <<-EOF
+	read -r -- "$@" <<-EOF
 		${_line}
 	EOF
+}
+
+_get_absdir() {
+	if [ -n "$2" ]; then
+		_absdir="$2"
+		echo "$2" | grep -q '^/' || \
+			_absdir="$1/$2"
+	else
+		_absdir="$1/$2"
+	fi
+	echo "${_absdir}"
 }
 
 _get_repo_names() {
@@ -127,11 +141,10 @@ _get_repo_names() {
 _cmd_gpg() {
 	case "$1" in
 		gpg-import)
-			(set -f; IFS='
-			'
+			(set -f; IFS="${_newline}"
 			for _repo_names_line in $(_get_repo_names); do
 				_repof=""; _repon=""
-				_split "${_repo_names_line}" '|' _repof _repon
+				_split "${_repo_names_line}" '|' _repof _repon _
 				_enabled=$(_read_rv "${_repof}" "${_repon}" "enabled")
 				_gpgcheck=$(_read_rv "${_repof}" "${_repon}" "gpgcheck")
 				[ X"${_enabled}${_gpgcheck}" != X"11" ] && continue
@@ -193,7 +206,6 @@ _cmd_run() {
 
 _cmd_sync() {
 	_args_sync="x --config=${_yumconf}"
-	_args_sync="${_args_sync} --delete"
 	_args_sync="${_args_sync} --downloadcomps"
 	_args_sync="${_args_sync} --download-metadata"
 	_args_sync="${_args_sync} --gpgcheck"
@@ -203,42 +215,44 @@ _cmd_sync() {
 	if [ -n "${_cachedir}" ]; then
 		_args_sync="${_args_sync} --cachedir=\"${_cachedir}\""
 	fi
-	
-	(set -f; IFS='
-	'
-	_repo="$1"
-	_destdirs=""
+	(
+	_repo="$1"; _repos_conf=""
+	set -f; IFS="${_newline}"
 	for _repo_names_line in $(_get_repo_names); do
 		_repof=""; _repon=""
-		_split "${_repo_names_line}" '|' _repof _repon
+		_split "${_repo_names_line}" '|' _repof _repon _
 		[ -n "${_repo}" ] && [ X"${_repo}" != X"${_repon}" ] && continue
 		_enabled=$(_read_rv "${_repof}" "${_repon}" "enabled")
 		[ X"${_enabled}" != X"1" ] && continue
 		echo "[info] synchronizing remote repository: ${_repon}"
 		_args="${_args_sync} --repoid=${_repon} --norepopath"
 		_sync_destdir=$(_read_rv "${_repof}" "${_repon}" "_sync.destdir")
-		if [ -n "${_sync_destdir}" ]; then
-			_repo_destdir="${_sync_destdir}"
-			echo "${_sync_destdir}" | grep -q '^/' || \
-				_repo_destdir="${_destdir}/${_repo_destdir}"
-		else
-			_repo_destdir="${_destdir}/${_repon}"
-		fi
-		_destdirs="${_destdirs}${_repo_destdir}\n"
+		_sync_repodir=$(_read_rv "${_repof}" "${_repon}" "_sync.repodir")
+		[ -z "${_sync_repodir}" ] && _sync_repodir="${_sync_destdir}"
+		_repo_destdir=$(_get_absdir "${_destdir}" "${_sync_destdir}")
+		_repo_repodir=$(_get_absdir "${_destdir}" "${_sync_repodir}")
+		_repo_keep=$(_read_rv "${_repof}" "${_repon}" "_sync.keep")
+		[ -z "${_repo_keep}" ] && _repo_keep=0
+		_repos_conf="${_repos_conf}${_repo_keep}|${_repo_repodir}\n"
 		_args="${_args} --download_path=\"${_repo_destdir}\""
 		_repo_newest=$(_read_rv "${_repof}" "${_repon}" "_sync.newest-only")
-		[ X"${_repo_newest}" != X"1" ] && _args="${_args} --newest-only"
+		[ X"${_repo_newest}" != X"0" ] && _args="${_args} --newest-only"
+		_repo_delete=$(_read_rv "${_repof}" "${_repon}" "_sync.delete")
+		[ X"${_repo_delete}" != X"0" ] && _args="${_args} --delete"
 		eval "set -- $_args"
 		_cmd_run reposync "$@" || _err "failed to run reposync"
 	done
 	
-	set -f; IFS='
-	'
-	for _repo_destdir in $(printf "%b" "${_destdirs}" | sort -u); do
+	set -f; IFS="${_newline}"
+	for _repo_conf in $(printf "%b" "${_repos_conf}" | sort -u -t '|' -k2,2); do
+		echo "_repo_conf=${_repo_conf}"
+		_repo_keep=0; _repo_dir=""
+		_split "${_repo_conf}" '|' _repo_keep _repo_dir
+		_repo_keep=$(printf "%d" "${_repo_keep}" 2>/dev/null)
 		set +f
-		echo "[info] updating local repository: ${_repo_destdir}"
+		echo "[info] updating local repository: ${_repo_dir}"
 		cd -- "${_cdir}" || continue
-		cd -- "${_repo_destdir}" || continue
+		cd -- "${_repo_dir}" || continue
 		_args="-v --pretty --workers 2"
 		[ -f comps.xml ] && _args="${_args} -g comps.xml"
 		pwd | grep -q ' ' || _args="${_args} --update"
@@ -251,6 +265,15 @@ _cmd_sync() {
 				break
 			fi
 		done
+		if [ "${_repo_keep}" -gt 0 ]; then
+			echo "[info] keeping last ${_repo_keep} packages in ${_repo_dir}"
+			set -f; IFS="${_newline}"
+			_pkgs=$(_cmd_run repomanage -o -k "${_repo_keep}" "${_repo_dir}")
+			for _pkg in ${_pkgs}; do
+				echo "[info] removing ${_pkg}"
+				rm -f -- "$_pkg"
+			done
+		fi
 	done
 	)
 	set -- 
