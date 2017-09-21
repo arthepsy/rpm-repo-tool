@@ -110,7 +110,7 @@ _get_py2() {
 	return 1
 }
 
-_strip() { sed 's/^[ \t]*//;s/[ \t]*$//'; }
+_strip() { sed 's/^[ '"`printf '\t'`"']*//;s/[ '"`printf '\t'`"']*$//'; }
 
 _split() {
 	_line=$1; IFS=$2; shift 2
