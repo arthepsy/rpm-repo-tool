@@ -252,7 +252,8 @@ _cmd_sync() {
 		set +f
 		echo "[info] updating local repository: ${_repo_dir}"
 		cd -- "${_cdir}" || continue
-		cd -- "${_repo_dir}" || continue
+		eval "set -- \"${_repo_dir}\""
+		cd -- "$@" || continue
 		_args="-v --pretty --workers 2"
 		[ -f comps.xml ] && _args="${_args} -g comps.xml"
 		pwd | grep -q ' ' || _args="${_args} --update"
