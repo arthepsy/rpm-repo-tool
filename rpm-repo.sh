@@ -245,7 +245,6 @@ _cmd_sync() {
 	
 	set -f; IFS="${_newline}"
 	for _repo_conf in $(printf "%b" "${_repos_conf}" | sort -u -t '|' -k2,2); do
-		echo "_repo_conf=${_repo_conf}"
 		_repo_keep=0; _repo_dir=""
 		_split "${_repo_conf}" '|' _repo_keep _repo_dir
 		_repo_keep=$(printf "%d" "${_repo_keep}" 2>/dev/null)
