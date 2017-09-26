@@ -205,7 +205,7 @@ _cmd_run() {
 }
 
 _cmd_sync() {
-	_args_sync="x --config=${_yumconf}"
+	_args_sync="x --config=\"${_yumconf}\""
 	_args_sync="${_args_sync} --downloadcomps"
 	_args_sync="${_args_sync} --download-metadata"
 	_args_sync="${_args_sync} --gpgcheck"
